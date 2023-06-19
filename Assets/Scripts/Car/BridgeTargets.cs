@@ -8,7 +8,7 @@ public class BridgeTargets : MonoBehaviour
     [SerializeField] private Transform _targetB;
 
     // Update is called once per frame
-    void Update()
+    void LateUpdate()
     {
         transform.position = Vector3.Lerp(_targetA.position, _targetB.position, 0.5f);
         transform.LookAt(_targetA);

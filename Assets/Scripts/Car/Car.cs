@@ -34,6 +34,9 @@ namespace Cars
         [SerializeField] private float _tireMass = 10;
         [SerializeField] private float _maxTurnAngle = 45;
         [SerializeField] private float _tireRadius = 0.25f;
+        [Space]
+        [HideInInspector][SerializeField] private AnimationCurve _frontWheelGripCurve = default;
+        [HideInInspector][SerializeField] private AnimationCurve _rearWheelGripCurve = default;
 
         [Header("Engine")]
         [SerializeField] private float _topSpeed = 10;
@@ -49,7 +52,13 @@ namespace Cars
 
         private void Awake()
         {
-            _rigidbody.centerOfMass = _centerOfMass;
+            Vector3 wheelCenter = Vector3.zero;
+            for (int i = 0; i < _wheels.Count; i++)
+            {
+                wheelCenter += transform.InverseTransformPoint(_wheels[i].transform.position);
+            }
+            wheelCenter /= _wheels.Count;
+            _rigidbody.centerOfMass = wheelCenter + _centerOfMass;
         }
 
 
@@ -68,39 +77,57 @@ namespace Cars
                     continue;
                 }
 
-                Vector3 raycastOrigin = wheel.transform.position + wheel.transform.up * (_suspensionMaxDistance - _tireRadius);
-                float raycastDistance = _suspensionMaxDistance * 2;
+
+                if (wheel.wheelPosition == Wheel.WheelPosition.Front)
+                {
+                    wheel.transform.localEulerAngles = new Vector3(0.0f, Input.GetAxis("Horizontal") * _maxTurnAngle, 0.0f);
+                }
+
+                Vector3 raycastOrigin = wheel.transform.position + wheel.transform.up * (_suspensionMaxDistance);
+                float raycastDistance = _suspensionMaxDistance * 2 + _tireRadius;
                 // Step 1 - Calculate Suspension
                 wheelRay = new Ray(raycastOrigin, wheel.transform.up * -1.0f);
 
 
-                Debug.DrawRay(wheelRay.origin, wheelRay.direction * raycastDistance, Color.red);
+                //Debug.DrawRay(wheelRay.origin, wheelRay.direction * raycastDistance, Color.red);
 
                 bool rayCastHit = Physics.Raycast(wheelRay, out wheelRayHit, raycastDistance, _wheelPhysicsMask);
+                Vector3 wheelWorldVelocity = _rigidbody.GetPointVelocity(wheel.transform.position);
 
                 if (rayCastHit)
                 {
+
+
                     Vector3 springDirection = wheel.transform.up;
 
-                    Vector3 wheelWorldVelocity = _rigidbody.GetPointVelocity(wheel.transform.position);
-                    float offset = _suspensionMaxDistance - wheelRayHit.distance;
+                    float offset = _suspensionMaxDistance - (wheelRayHit.distance - _tireRadius);
                     float velocity = Vector3.Dot(springDirection, wheelWorldVelocity);
                     float force = (offset * _suspensionStrength) - (velocity * _suspensionDampening);
 
-                    Debug.Log(force);
+                    ///Debug.Log(force);
 
-                   force = Mathf.Max(0, force);
+                    force = Mathf.Max(0, force);
 
-                    wheel.geometry.position = wheelRay.GetPoint(wheelRayHit.distance - _tireRadius);
 
-                    Debug.DrawRay(raycastOrigin, springDirection * force, Color.green);
+                    //Debug.DrawRay(raycastOrigin, springDirection * force, Color.green);
 
                     _rigidbody.AddForceAtPosition(springDirection * force, wheel.transform.position);
 
                     // Step 2 - Calculate Steering
                     Vector3 steeringDirection = wheel.transform.right;
                     float steeringVelocity = Vector3.Dot(steeringDirection, wheelWorldVelocity);
+                    float slideAmount = Vector3.Dot(steeringDirection.normalized, wheelWorldVelocity.normalized);
+
                     float desiredChange = -steeringVelocity * _tireGrip;
+                    //if (wheel.wheelPosition == Wheel.WheelPosition.Front)
+                    //{
+                    //    desiredChange = -steeringVelocity * _frontWheelGripCurve.Evaluate(Mathf.Abs(slideAmount));
+                    //}
+                    //else
+                    //{
+                    //    desiredChange = -steeringVelocity * _rearWheelGripCurve.Evaluate(Mathf.Abs(slideAmount));
+                    //}
+
 
                     float desiredAcceleration = desiredChange / Time.fixedDeltaTime;
 
@@ -125,18 +152,40 @@ namespace Cars
                             _rigidbody.AddForceAtPosition(accelerationDirection * torque, wheel.transform.position);
                         }
                     }
+
+                    // Put wheel geometry into place
+                    wheel.geometry.position = wheelRay.GetPoint(Mathf.Max(0, wheelRayHit.distance - _tireRadius));
+
                 }
                 else
                 {
-                    wheel.geometry.position = wheelRay.GetPoint(_suspensionMaxDistance*2 - _tireRadius);
-                    Debug.Log(0);
+                    wheel.geometry.position = wheelRay.GetPoint(_suspensionMaxDistance*2);
+                    //Debug.Log(0);
                 }
 
+                //Vector3 forwardsVelocity = Vector3.Project(wheelWorldVelocity, wheel.transform.forward);
 
-                if (wheel.wheelPosition == Wheel.WheelPosition.Front)
+
+                //Debug.DrawRay(wheel.transform.position, wheelWorldVelocity * 2.0f, Color.cyan);
+                //Debug.DrawRay(wheel.transform.position, forwardsVelocity * 2.0f, Color.blue);
+
+
+
+                Vector3 forwardsVelocity = wheel.transform.InverseTransformDirection(wheelWorldVelocity);
+                //directionSpeed = rotatedVelocity.z;
+
+
+
+                if (i == 0)
                 {
-                    wheel.transform.localEulerAngles = new Vector3(0.0f, Input.GetAxis("Horizontal") * _maxTurnAngle, 0.0f);
+                    Debug.Log(forwardsVelocity);
                 }
+
+
+                float forwardsTravel = forwardsVelocity.z;
+                float wheelCircumference = 2 * Mathf.PI * _tireRadius;
+                wheel.geometry.Rotate(Vector3.forward, 360.0f * (forwardsTravel / wheelCircumference) * Time.fixedDeltaTime, Space.Self);
+
 
             }
         }
@@ -147,9 +196,9 @@ namespace Cars
             Gizmos.color = Color.cyan;
             Gizmos.matrix = transform.localToWorldMatrix;
 
-            foreach(Wheel wheel in _wheels)
+            foreach (Wheel wheel in _wheels)
             {
-                if(wheel != null)
+                if (wheel != null)
                 {
                     //Gizmos.DrawSphere(transform.InverseTransformPoint(wheel.transform.position), 0.2f);
 
@@ -167,7 +216,7 @@ namespace Cars
             Gizmos.color = Color.black;
             if (Application.IsPlaying(this))
             {
-                Gizmos.DrawSphere(_rigidbody.centerOfMass, 0.2f); 
+                Gizmos.DrawSphere(_rigidbody.centerOfMass, 0.2f);
             }
             else
             {
