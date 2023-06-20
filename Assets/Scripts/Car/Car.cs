@@ -1,6 +1,7 @@
     using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using TMPro;
 using UnityEngine;
 
 namespace Cars
@@ -43,11 +44,18 @@ namespace Cars
         [SerializeField] AnimationCurve _torqueCurve = default;
         [SerializeField] private float _maxTorque = 10;
 
+
         [Space]
         [SerializeField] DriveTrain _driveTrain = DriveTrain.RearWheelDrive;
 
+        [SerializeField] private float _decelForce = 1f;
+        [SerializeField] private float _brakeCutoff = 1f;
+
         [Space]
         [SerializeField] LayerMask _wheelPhysicsMask = default;
+
+        [Header("Debug")]
+        [SerializeField] TextMeshProUGUI _WheelVelocityDebug = default;
 
 
         private void Awake()
@@ -69,6 +77,8 @@ namespace Cars
 
             // TODO - Consider wheel Radius!
 
+            string wheelVelocityDebug = "";
+
             for(int i = 0; i < _wheels.Count; i++)
             {
                 Wheel wheel = _wheels[i];
@@ -85,19 +95,15 @@ namespace Cars
 
                 Vector3 raycastOrigin = wheel.transform.position + wheel.transform.up * (_suspensionMaxDistance);
                 float raycastDistance = _suspensionMaxDistance * 2 + _tireRadius;
+
                 // Step 1 - Calculate Suspension
                 wheelRay = new Ray(raycastOrigin, wheel.transform.up * -1.0f);
-
-
-                //Debug.DrawRay(wheelRay.origin, wheelRay.direction * raycastDistance, Color.red);
 
                 bool rayCastHit = Physics.Raycast(wheelRay, out wheelRayHit, raycastDistance, _wheelPhysicsMask);
                 Vector3 wheelWorldVelocity = _rigidbody.GetPointVelocity(wheel.transform.position);
 
                 if (rayCastHit)
                 {
-
-
                     Vector3 springDirection = wheel.transform.up;
 
                     float offset = _suspensionMaxDistance - (wheelRayHit.distance - _tireRadius);
@@ -133,15 +139,18 @@ namespace Cars
 
                     _rigidbody.AddForceAtPosition(steeringDirection * _tireMass * desiredAcceleration, wheel.transform.position);
 
-              
 
+                    Debug.Log(Mathf.Epsilon);
                     // Step 3 - Calcualte Acceleration
+                    wheelVelocityDebug += $"Wheel {i} = {Input.GetAxis("Vertical")}";
 
                     if (wheel.IsDriveWheel(_driveTrain))
                     {
                         Vector3 accelerationDirection = wheel.transform.forward;
 
-                        if(Input.GetAxis("Vertical") > 0.0f)
+                        float accelerationInput = Input.GetAxis("Vertical");
+
+                        if (accelerationInput > 0.01f)
                         {
                             float carSpeed = Vector3.Dot(transform.forward, _rigidbody.velocity);
                             float normalizedSpeed = Mathf.Clamp01(Mathf.Abs(carSpeed) / _topSpeed);
@@ -150,6 +159,32 @@ namespace Cars
                             Debug.Log(torque);
 
                             _rigidbody.AddForceAtPosition(accelerationDirection * torque, wheel.transform.position);
+                        }
+                        else if (accelerationInput < -0.01f)
+                        {
+                            _rigidbody.AddForceAtPosition(-wheelWorldVelocity * _decelForce, wheel.transform.position);
+
+                            //Vector3 wheelVelocity = Vector3.Project(wheelWorldVelocity, accelerationDirection);
+
+                            
+
+                            //if (wheelVelocity.magnitude > _stopHoldCutoff)
+                            //{
+                            //    _rigidbody.AddForceAtPosition(-wheelVelocity * _decelForce, wheel.transform.position);
+                            //}
+                            //else
+                            //{
+                            //    _rigidbody.AddForceAtPosition(-wheelVelocity, wheel.transform.position);
+                            //}
+
+
+                        }
+                        else
+                        {
+                            if(wheelWorldVelocity.magnitude < _brakeCutoff)
+                            {
+                                _rigidbody.AddForceAtPosition(-wheelWorldVelocity * _decelForce, wheel.transform.position);
+                            }
                         }
                     }
 
@@ -188,7 +223,14 @@ namespace Cars
 
 
             }
+
+            _WheelVelocityDebug.text = wheelVelocityDebug;
         }
+
+        //void ApplyBrakeForce(Wheel wheel)
+        //    {
+
+        //    }
 
         void OnDrawGizmosSelected()
         {
